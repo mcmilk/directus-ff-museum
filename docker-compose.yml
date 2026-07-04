@@ -1,0 +1,116 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Datenbank
+  postgres:
+    image: postgres:15-alpine
+    container_name: directus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - directus-network
+
+  # Directus CMS
+  directus:
+    image: directus/directus:latest
+    container_name: directus-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_SSL: 'false'
+      
+      # Admin Benutzer
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      
+      # Directus Konfiguration
+      KEY: ${DIRECTUS_KEY}
+      SECRET: ${DIRECTUS_SECRET}
+      CORS_ENABLED: 'true'
+      CORS_ORIGIN: '*'
+      
+      # Dateiupload
+      STORAGE_LOCATIONS: 'local'
+      STORAGE_LOCAL_DRIVER: 'local'
+      STORAGE_LOCAL_ROOT: '/directus/uploads'
+      FILE_METADATA_ALLOW_LIST: 'exif,iptc,icc'
+      
+      # Erweiterte Einstellungen
+      RATE_LIMIT_ENABLED: 'true'
+      RATE_LIMIT_STORE: 'memory'
+      RATE_LIMIT_POINTS: 100
+      RATE_LIMIT_DURATION: 15
+      
+      # Cache
+      CACHE_ENABLED: 'true'
+      CACHE_AUTO_PURGE: 'true'
+      
+      # Email (optional, für Benachrichtigungen)
+      MAIL_FROM: ${MAIL_FROM:-noreply@museum.local}
+      MAIL_TRANSPORT: 'sendmail'
+      
+      # Logging
+      LOG_LEVEL: info
+      NODE_ENV: production
+    
+    volumes:
+      - ./data:/directus/data
+      - ./uploads:/directus/uploads
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    
+    ports:
+      - "8055:8055"
+    
+    networks:
+      - directus-network
+
+  # pgAdmin - PostgreSQL Verwaltungs-Interface
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: directus-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
+      PGADMIN_CONFIG_ENHANCED_LOG_LEVEL: 10
+    
+    volumes:
+      - ./pgadmin:/var/lib/pgadmin
+    
+    ports:
+      - "5050:80"
+    
+    networks:
+      - directus-network
+
+networks:
+  directus-network:
+    driver: bridge
+
+volumes:
+  postgres:
+  directus:
+  pgadmin:
